@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual Environments
+.venv/
+venv/
+env/
+
+# VS Code
+.vscode/
+
+# Jupyter
+.ipynb_checkpoints/
+notebook/
+
+# Uploads
+uploads/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Large model (not used)
+model/ResNet50V2_Model.h5
+
+# Flask cache
+instance/
+
+# Environment variables
+.env
+
+dataset/train/
+dataset/test/

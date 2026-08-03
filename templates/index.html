@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Emotion Based Music Recommendation System</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f1f1f1;
+        }
+
+        h1 {
+            text-align: center;
+            margin-top: 30px;
+        }
+
+        .container {
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap;
+            margin-top: 50px;
+        }
+
+        .section {
+            width: 45%;
+            text-align: center;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .section.border {
+            border: 1px solid #ccc;
+        }
+
+        .input-container {
+            margin-bottom: 20px;
+            display: flex;
+            flex-direction: column;
+            width: calc(50%-10px)
+        }
+
+        .input-container input[type="file"] {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            font-size: 16px;
+            width: calc(100% - 22px);
+            box-sizing: border-box;
+            display: inline-block;
+        }
+
+        .preview-container {
+            text-align: center;
+			overflow: hidden; /* Hide overflowing content */
+        }
+
+        .preview-container img {
+            margin: 0 auto;
+            max-width: 100%;
+            margin-top: 20px;
+            margin-bottom: 20px;
+            display: block;
+			 transition: transform 0.2s ease-in-out; /* Add smooth transition */
+        }
+		
+		/* Add a hover effect for zooming */
+.preview-container img:hover {
+    transform: scale(1.2); /* Adjust the scale factor as needed for zooming */
+}
+
+        button {
+            background-color: #4CAF50;
+            color: #fff;
+            padding: 10px 20px;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            border-radius: 3px;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        .spinner {
+            display: none;
+            text-align: center;
+        }
+
+        .spinner img {
+            width: 50%;
+            height: 50%;
+        }
+
+        .result {
+            margin-top: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+			 display: block;
+        }
+
+        .result table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        .result th, .result td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+
+        .result th {
+            background-color: #f2f2f2;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Emotion Based Music Recommendation System</h1>
+
+    <div class="container">
+        
+        <div class="section border">
+            <h2>Upload Image</h2>
+            <div class="input-container">
+                <input type="file" id="imageInput" accept="image/*" onchange="previewImage(event)">
+            </div>
+
+            <div class="preview-container">
+                <img id="imagePreview" src="#" alt="Image Preview" style="display: none;">
+            </div>
+
+            <button onclick="submitImage()">Submit</button>
+
+            <div class="spinner" id="imageSpinner">
+                <img src="static/spinner.gif" alt="Loading...">
+            </div>
+
+            <div class="result" id="captionResult">
+                <!-- Result will be displayed here -->
+            </div>
+        </div>
+       
+    </div>
+
+ <script>
+    function previewImage(event) {
+        var imageInput = document.getElementById('imageInput');
+        var imagePreview = document.getElementById('imagePreview');
+        imagePreview.style.display = 'block';
+        var reader = new FileReader();
+        reader.onload = function () {
+            imagePreview.src = reader.result;
+        };
+        reader.readAsDataURL(imageInput.files[0]);
+    }
+
+    function submitImage() {
+        var formData = new FormData();
+        var fileInput = document.getElementById('imageInput');
+        formData.append('file', fileInput.files[0]);
+
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', '/predict', true);
+
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState === XMLHttpRequest.DONE) {
+                if (xhr.status === 200) {
+                    var response = JSON.parse(xhr.responseText);
+                    displayResult(response);
+                } else {
+                    console.error('Error:', xhr.status);
+                }
+            }
+        };
+
+        xhr.send(formData);
+    }
+
+    function displayResult(response) {
+        var resultContainer = document.getElementById('captionResult');
+        resultContainer.innerHTML = ''; // Clear previous result
+
+        var emotionDiv = document.createElement('div');
+        emotionDiv.textContent = 'Person Emotion is : ' + response.emotion;
+        resultContainer.appendChild(emotionDiv);
+
+        var recommendations = response.recommendations;
+
+        var table = document.createElement('table');
+        var headerRow = table.insertRow();
+        var headers = ['Album', 'Artist', 'Name', 'Popularity', 'Release Date'];
+        headers.forEach(function(headerText) {
+            var header = document.createElement('th');
+            header.textContent = headerText;
+            headerRow.appendChild(header);
+        });
+
+        recommendations.forEach(function(recommendation) {
+            var row = table.insertRow();
+            var cells = ['album', 'artist', 'name', 'popularity', 'release_date'];
+            cells.forEach(function(cell) {
+                var cellData = recommendation[cell];
+                var cellElement = document.createElement('td');
+                cellElement.textContent = cellData;
+                row.appendChild(cellElement);
+            });
+        });
+
+        resultContainer.appendChild(table);
+    }
+</script>
+
+</body>
+
+</html>
