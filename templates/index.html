@@ -914,7 +914,7 @@ function startMoodDetection() {
             detectMood();
         }
 
-    }, 500);
+    }, 2000);
 
 }
 
@@ -942,11 +942,11 @@ async function detectMood() {
 
     try {
 
-        canvas.width =
-            video.videoWidth;
+        const maxWidth = 640;
+        const scale = Math.min(1, maxWidth / video.videoWidth);
 
-        canvas.height =
-            video.videoHeight;
+        canvas.width = Math.round(video.videoWidth * scale);
+        canvas.height = Math.round(video.videoHeight * scale);
 
 
         context.drawImage(
