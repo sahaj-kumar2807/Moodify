@@ -5,3 +5,4 @@ gunicorn==23.0.0
 pandas==2.2.2
 matplotlib==3.8.4
 numpy==1.26.4
+mediapipe==0.10.14
