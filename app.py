@@ -8,22 +8,12 @@ import time
 import requests
 from dotenv import load_dotenv
 
-# =========================================================
-# SPOTIFY CACHE
-# =========================================================
-
-spotify_token = None
-spotify_token_expires_at = 0
-spotify_cache = {}
-
 
 def get_spotify_access_token():
 
     global spotify_token
-    global spotify_token_expires_at
 
-    # Reuse the existing token until it expires
-    if spotify_token and time.time() < spotify_token_expires_at:
+    if spotify_token:
         return spotify_token
 
     url = "https://accounts.spotify.com/api/token"
@@ -36,8 +26,7 @@ def get_spotify_access_token():
         auth=(
             SPOTIFY_CLIENT_ID,
             SPOTIFY_CLIENT_SECRET
-        ),
-        timeout=5
+        )
     )
 
     if response.status_code != 200:
@@ -45,13 +34,7 @@ def get_spotify_access_token():
         print(response.text)
         return None
 
-    data = response.json()
-
-    spotify_token = data["access_token"]
-
-    spotify_token_expires_at = (
-        time.time() + data.get("expires_in", 3600) - 60
-    )
+    spotify_token = response.json()["access_token"]
 
     return spotify_token
 
@@ -63,93 +46,64 @@ def find_spotify_track(song_name, artist_name):
         f"{artist_name.strip().lower()}"
     )
 
-    # Return immediately if this song was already found successfully.
-    if cache_key in spotify_cache and spotify_cache[cache_key]:
+    if cache_key in spotify_cache:
         return spotify_cache[cache_key]
 
     token = get_spotify_access_token()
 
     if not token:
-        print("Spotify search skipped: no client-credentials token.")
         return None
 
     url = "https://api.spotify.com/v1/search"
-    headers = {"Authorization": f"Bearer {token}"}
 
-    # Try the precise query first, then a normal text query. Some tracks
-    # fail the quoted track/artist search even though Spotify can find them.
-    queries = [
-        f'track:"{song_name}" artist:"{artist_name}"',
-        f"{song_name} {artist_name}"
-    ]
+    headers = {
+        "Authorization": f"Bearer {token}"
+    }
 
-    for query in queries:
-        params = {
-            "q": query,
-            "type": "track",
-            "limit": 5
-        }
+    params = {
+        "q": f'track:"{song_name}" artist:"{artist_name}"',
+        "type": "track",
+        "limit": 1
+    }
 
-        try:
-            response = requests.get(
-                url,
-                headers=headers,
-                params=params,
-                timeout=5
-            )
-        except requests.RequestException as e:
-            print("Spotify search error:", e)
-            continue
+    response = requests.get(
+        url,
+        headers=headers,
+        params=params,
+        timeout=5
+    )
 
-        if response.status_code != 200:
-            print("Spotify search failed:")
-            print(response.text)
-            continue
+    if response.status_code != 200:
+        print("Spotify search failed:")
+        print(response.text)
+        return None
 
-        try:
-            tracks = response.json().get("tracks", {}).get("items", [])
-        except ValueError:
-            tracks = []
+    tracks = response.json()["tracks"]["items"]
 
-        if not tracks:
-            continue
+    if not tracks:
+        spotify_cache[cache_key] = None
+        return None
 
-        # Prefer a result whose title and artist actually match the dataset.
-        target_name = song_name.strip().lower()
-        target_artist = artist_name.strip().lower()
+    track = tracks[0]
 
-        track = tracks[0]
-        for candidate in tracks:
-            candidate_name = candidate.get("name", "").strip().lower()
-            candidate_artists = [
-                a.get("name", "").strip().lower()
-                for a in candidate.get("artists", [])
-            ]
+    result = {
+        "spotify_id": track["id"],
+        "spotify_url": track["external_urls"]["spotify"],
+        "spotify_uri": track["uri"]
+    }
 
-            if candidate_name == target_name and target_artist in candidate_artists:
-                track = candidate
-                break
+    spotify_cache[cache_key] = result
 
-        result = {
-            "spotify_id": track.get("id"),
-            "spotify_url": track.get("external_urls", {}).get("spotify"),
-            "spotify_uri": track.get("uri")
-        }
-
-        if result["spotify_id"]:
-            spotify_cache[cache_key] = result
-            return result
-
-    # Do not cache failures. A temporary Spotify/API problem should not make
-    # the recommendation permanently say "Unavailable" until Flask restarts.
-    return None
-
-
+    return result
 # =========================================================
 # FLASK
 # =========================================================
 
 app = Flask(__name__)
+
+# Spotify data is cached so repeated lookups are fast.
+spotify_token = None
+spotify_cache = {}
 
 load_dotenv()
 
@@ -169,8 +123,11 @@ Music_Player = pd.read_csv(
 # MEDIAPIPE FACE LANDMARKER
 # =========================================================
 
-MODEL_PATH = "./models/face_landmarker.task"
+# =========================================================
+# MEDIAPIPE FACE LANDMARKER
+# =========================================================
 
+MODEL_PATH = "./models/face_landmarker.task"
 
 BaseOptions = mp.tasks.BaseOptions
 
@@ -184,31 +141,39 @@ VisionRunningMode = (
     mp.tasks.vision.RunningMode
 )
 
-
-options = FaceLandmarkerOptions(
-
-    base_options=BaseOptions(
-        model_asset_path=MODEL_PATH
-    ),
-
-    running_mode=VisionRunningMode.VIDEO,
-
-    num_faces=1,
-
-    output_face_blendshapes=True
-)
+landmarker = None
 
 
-landmarker = (
-    FaceLandmarker.create_from_options(
-        options
-    )
-)
+def get_landmarker():
 
+    global landmarker
 
-print("===================================")
-print("       MOODIFY MEDIAPIPE READY")
-print("===================================")
+    if landmarker is None:
+
+        options = FaceLandmarkerOptions(
+
+            base_options=BaseOptions(
+                model_asset_path=MODEL_PATH
+            ),
+
+            running_mode=VisionRunningMode.VIDEO,
+
+            num_faces=1,
+
+            output_face_blendshapes=True
+        )
+
+        landmarker = (
+            FaceLandmarker.create_from_options(
+                options
+            )
+        )
+
+        print("===================================")
+        print("       MOODIFY MEDIAPIPE READY")
+        print("===================================")
+
+    return landmarker
 
 
 # =========================================================
@@ -292,24 +257,10 @@ def get_music_recommendations(mood):
         orient="records"
     )
 
-    # Find Spotify information only once per song.
-    # Later detections return cached information instantly.
-    for song in recommendations:
-
-        spotify_data = find_spotify_track(
-            song["name"],
-            song["artist"]
-        )
-
-        if spotify_data:
-
-            song.update(spotify_data)
-
-        else:
-
-            song["spotify_id"] = None
-            song["spotify_url"] = None
-            song["spotify_uri"] = None
+    # IMPORTANT:
+    # Do NOT call Spotify here.
+    # This function runs during every /detect_mood request.
+    # Spotify lookups are handled separately so emotion detection stays fast.
 
     return recommendations
 
@@ -539,6 +490,43 @@ def home():
 
 
 # =========================================================
+# SPOTIFY TRACK LOOKUP
+# =========================================================
+# This route is separate from /detect_mood.
+# It is only called when the frontend actually needs Spotify data.
+
+@app.route(
+    "/spotify_track",
+    methods=["POST"]
+)
+def spotify_track():
+
+    song_name = request.form.get("song_name", "").strip()
+    artist_name = request.form.get("artist_name", "").strip()
+
+    if not song_name or not artist_name:
+
+        return jsonify({
+            "error": "Song name and artist are required"
+        }), 400
+
+    result = find_spotify_track(
+        song_name,
+        artist_name
+    )
+
+    if result is None:
+
+        return jsonify({
+            "spotify_id": None,
+            "spotify_url": None,
+            "spotify_uri": None
+        })
+
+    return jsonify(result)
+
+
+# =========================================================
 # REAL-TIME MOOD DETECTION
 # =========================================================
 
@@ -631,8 +619,10 @@ def detect_mood():
     # DETECT
     # -----------------------------------------------------
 
+    landmarker_instance = get_landmarker()
+
     result = (
-        landmarker.detect_for_video(
+        landmarker_instance.detect_for_video(
             mp_image,
             timestamp
         )
@@ -742,34 +732,6 @@ def detect_mood():
             recommendations
 
     })
-
-
-# =========================================================
-# SPOTIFY TRACK LOOKUP (OPTIONAL FRONTEND FALLBACK)
-# =========================================================
-
-@app.route("/spotify_track", methods=["POST"])
-def spotify_track():
-
-    song_name = request.form.get("song_name", "").strip()
-    artist_name = request.form.get("artist_name", "").strip()
-
-    if not song_name or not artist_name:
-        return jsonify({
-            "error": "Song name and artist are required"
-        }), 400
-
-    result = find_spotify_track(
-        song_name,
-        artist_name
-    )
-
-    if not result:
-        return jsonify({
-            "error": "Spotify track not found"
-        }), 404
-
-    return jsonify(result)
 
 
 # =========================================================
