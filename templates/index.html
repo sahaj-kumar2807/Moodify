@@ -1184,6 +1184,43 @@ function updateSongs(songs) {
         </div>
     `).join("");
 
+    // Preload Spotify IDs in the background so playback starts faster.
+    document.querySelectorAll(".song-link").forEach(button => {
+        const index = Number(button.dataset.index);
+
+        if (moodifyQueue[index]?.id) {
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append("song_name", button.dataset.name);
+        formData.append("artist_name", button.dataset.artist);
+
+        fetch("/spotify_track", {
+            method: "POST",
+            body: formData
+        })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Spotify lookup failed: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.spotify_id && moodifyQueue[index]) {
+                    moodifyQueue[index].id = data.spotify_id;
+                }
+            })
+            .catch(error => {
+                console.debug(
+                    "Spotify preload failed:",
+                    error
+                );
+            });
+    });
+
+
+
     document.querySelectorAll(".song-link").forEach(button => {
         button.addEventListener("click", async () => {
             const index = Number(button.dataset.index);
@@ -1212,33 +1249,58 @@ function updateSongs(songs) {
                     return;
                 }
 
-                const formData = new FormData();
-                formData.append("song_name", button.dataset.name);
-                formData.append("artist_name", button.dataset.artist);
+        let spotifyTrackId = moodifyQueue[index]?.id;
 
-                const response = await fetch("/spotify_track", {
+// If the background preload hasn't finished yet,
+// do the lookup normally as a fallback.
+        if (!spotifyTrackId) {
+            const formData = new FormData();
+
+            formData.append(
+                "song_name",
+                button.dataset.name
+            );
+
+            formData.append(
+                "artist_name",
+                button.dataset.artist
+            );
+
+            const response = await fetch(
+                "/spotify_track",
+                {
                     method: "POST",
                     body: formData
-                });
-
-                if (!response.ok) {
-                    throw new Error(`Spotify lookup failed: ${response.status}`);
                 }
+            );
 
-                const data = await response.json();
-
-                if (!data.spotify_id) {
-                    throw new Error("Spotify track not found");
-                }
-
-                moodifyQueue[index].id = data.spotify_id;
-                moodifyQueueIndex = index;
-
-                await playMoodifySpotifyTrack(
-                    data.spotify_id,
-                    button.dataset.name,
-                    button.dataset.artist
+            if (!response.ok) {
+                throw new Error(
+                    `Spotify lookup failed: ${response.status}`
                 );
+            }
+
+            const data = await response.json();
+
+            if (!data.spotify_id) {
+                throw new Error(
+                    "Spotify track not found"
+                );
+            }
+
+            spotifyTrackId = data.spotify_id;
+
+            moodifyQueue[index].id =
+                spotifyTrackId;
+        }
+
+        moodifyQueueIndex = index;
+
+        await playMoodifySpotifyTrack(
+            spotifyTrackId,
+            button.dataset.name,
+            button.dataset.artist
+        );
 
                 button.textContent = "✓ Playing";
 
