@@ -520,7 +520,11 @@
 <h3 class="text-headline-md font-headline-md text-on-surface">Your Soundtrack</h3>
 <p class="text-body-md font-body-sm text-on-surface-variant mt-1">Curated for your current mood.</p>
 </div>
-<button class="text-label-caps font-label-caps text-primary hover:text-secondary transition-colors uppercase">See All</button>
+<button
+    id="seeAllButton"
+    class="text-label-caps font-label-caps text-primary hover:text-secondary transition-colors uppercase">
+    See All
+</button>
 </div>
 <div class="songs grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-md">
 <div class="song flex flex-col gap-xs group cursor-pointer">
@@ -625,6 +629,54 @@
 </div>
 
 <div id="spotifyPlayer" style="position:fixed;left:-10000px;top:-10000px;width:1px;height:1px;opacity:0;pointer-events:none;overflow:hidden;"></div>
+
+<div
+    id="allSongsModal"
+    class="fixed inset-0 z-[100] hidden bg-black/70 backdrop-blur-sm p-4 md:p-8">
+
+    <div
+        class="max-w-5xl mx-auto mt-10 max-h-[85vh] overflow-hidden
+               rounded-2xl bg-surface border border-white/10 shadow-2xl">
+
+        <div
+            class="flex items-center justify-between p-6 border-b border-white/10">
+
+            <div>
+                <h2 class="text-headline-md font-bold text-on-surface">
+                    Your Full Soundtrack
+                </h2>
+
+                <p
+                    id="allSongsSubtitle"
+                    class="text-body-sm text-on-surface-variant mt-1">
+                    Songs selected for your mood
+                </p>
+            </div>
+
+            <button
+                id="closeSongsModal"
+                class="w-10 h-10 rounded-full bg-white/10
+                       hover:bg-white/20 transition-colors">
+
+                <span class="material-symbols-outlined">
+                    close
+                </span>
+
+            </button>
+
+        </div>
+
+        <div
+            id="allSongsList"
+            class="p-6 overflow-y-auto max-h-[70vh] space-y-2">
+        </div>
+
+    </div>
+
+</div>
+
+
+
 <script>
 
 
@@ -1115,17 +1167,91 @@ function updateMoodUI(data) {
 
 
     // SONGS
+    // Keep the same mood's 50-song list stable between detection requests.
+    // The camera calls /detect_mood every few seconds, so resetting the
+    // rotation here would otherwise make the cards jump back to the start.
 
-    updateSongs(
-        data.recommendations || []
-    );
+    const detectedMood =
+        data.mood || "Neutral";
 
-}
+    if (
+        detectedMood !== lastRecommendationMood ||
+        !allMoodSongs.length
+    ) {
+        allMoodSongs =
+            Array.isArray(data.recommendations)
+                ? data.recommendations.slice(0, 50)
+                : [];
+
+        currentMoodSongs = allMoodSongs;
+
+        currentRotationIndex = 0;
+
+        lastRecommendationMood =
+            detectedMood;
+
+        updateSongs(
+            getRotationSongs()
+        );
+
+        startSongRotation();
+    }
+
+    }
 
 
 // =====================================================
 // SONGS
 // =====================================================
+    function getRotationSongs() {
+
+        if (!allMoodSongs.length) {
+            return [];
+        }
+
+        const songs = [];
+
+        for (let i = 0; i < 5; i++) {
+
+            const index =
+                (currentRotationIndex + i) %
+                allMoodSongs.length;
+
+            songs.push(
+                allMoodSongs[index]
+            );
+        }
+
+        return songs;
+    }
+
+
+    function startSongRotation() {
+
+        if (rotationTimer) {
+            clearInterval(rotationTimer);
+        }
+
+        if (allMoodSongs.length <= 5) {
+            return;
+        }
+
+        rotationTimer = setInterval(() => {
+
+            if (emotionLocked) {
+                return;
+            }
+
+            currentRotationIndex =
+                (currentRotationIndex + 5) %
+                allMoodSongs.length;
+
+            updateSongs(
+                getRotationSongs()
+            );
+
+        }, 15000);
+    }
 
 function updateSongs(songs) {
     const songsContainer = document.querySelector(".songs");
@@ -1135,7 +1261,7 @@ function updateSongs(songs) {
         ? moodifyQueue
         : [];
 
-    moodifyQueue = (songs || []).slice(0, 3).map(song => {
+    moodifyQueue = (songs || []).slice(0, 5).map(song => {
         const old = oldQueue.find(item =>
             item.name === song.name &&
             item.artist === song.artist
@@ -1170,7 +1296,7 @@ function updateSongs(songs) {
         return;
     }
 
-    songsContainer.innerHTML = songs.slice(0, 3).map((song, index) => `
+    songsContainer.innerHTML = songs.slice(0, 5).map((song, index) => `
         <div class="song">
             <div class="song-badge">${index === 0 ? "Top Pick" : "For Your Mood"}</div>
             <div class="album"></div>
@@ -1324,11 +1450,338 @@ function updateSongs(songs) {
     });
 }
 
+
+// =====================================================
+// SEE ALL — FULL 50 SONG LIST
+// =====================================================
+
+function setSongsModal(open) {
+    const modal =
+        document.getElementById("allSongsModal");
+
+    if (!modal) {
+        return;
+    }
+
+    if (open) {
+        modal.classList.remove("hidden");
+        document.body.classList.add("overflow-hidden");
+    } else {
+        modal.classList.add("hidden");
+        document.body.classList.remove("overflow-hidden");
+    }
+}
+
+
+function renderAllSongs() {
+    const list =
+        document.getElementById("allSongsList");
+
+    const subtitle =
+        document.getElementById("allSongsSubtitle");
+
+    if (!list) {
+        return;
+    }
+
+    if (!allMoodSongs.length) {
+        if (subtitle) {
+            subtitle.textContent =
+                "Start the camera to build your soundtrack.";
+        }
+
+        list.innerHTML = `
+            <div class="text-center py-12 text-on-surface-variant">
+                No recommendations yet.
+            </div>
+        `;
+
+        return;
+    }
+
+    if (subtitle) {
+        subtitle.textContent =
+            `${allMoodSongs.length} songs selected for ${lastRecommendationMood || "your mood"}`;
+    }
+
+    list.innerHTML = allMoodSongs.map((song, index) => `
+        <div
+            class="all-song-row flex items-center gap-3 md:gap-4 p-3 rounded-xl
+                   bg-white/5 hover:bg-white/10 border border-white/5
+                   transition-colors">
+
+            <div
+                class="w-9 h-9 md:w-10 md:h-10 shrink-0 rounded-lg
+                       bg-primary/10 flex items-center justify-center
+                       text-primary font-bold text-sm">
+                ${index + 1}
+            </div>
+
+            <div class="flex-1 min-w-0">
+                <div
+                    class="font-semibold text-on-surface truncate"
+                    title="${escapeHTML(song.name)}">
+                    ${escapeHTML(song.name)}
+                </div>
+
+                <div
+                    class="text-sm text-on-surface-variant truncate"
+                    title="${escapeHTML(song.artist)}">
+                    ${escapeHTML(song.artist)}
+                </div>
+            </div>
+
+            <button
+                type="button"
+                class="all-song-play shrink-0 px-4 py-2 rounded-full
+                       bg-primary text-background font-bold text-sm
+                       hover:brightness-110 transition"
+                data-all-index="${index}">
+                ▶ Play
+            </button>
+        </div>
+    `).join("");
+
+    list.querySelectorAll(".all-song-play").forEach(button => {
+        button.addEventListener("click", async () => {
+            const index =
+                Number(button.dataset.allIndex);
+
+            await playAllMoodSong(index);
+        });
+    });
+}
+
+
+function openAllSongs() {
+    renderAllSongs();
+    setSongsModal(true);
+}
+
+
+async function playAllMoodSong(index) {
+    const song = allMoodSongs[index];
+
+    if (!song) {
+        return;
+    }
+
+    const buttons =
+        document.querySelectorAll(".all-song-play");
+
+    buttons.forEach(button => {
+        button.disabled = true;
+    });
+
+    const primaryTitle =
+        document.getElementById("primaryPlayerTitle");
+
+    const primaryArtist =
+        document.getElementById("primaryPlayerArtist");
+
+    if (primaryTitle) {
+        primaryTitle.textContent =
+            song.name;
+    }
+
+    if (primaryArtist) {
+        primaryArtist.textContent =
+            song.artist;
+    }
+
+    try {
+        if (!spotifyAccessToken) {
+            await spotifyLogin();
+            return;
+        }
+
+        // From the full-list player, make all 50 songs the active queue.
+        // This also makes Previous/Next work naturally after choosing
+        // any song from See All.
+        moodifyQueue = allMoodSongs.map(item => ({
+            name: item.name,
+            artist: item.artist,
+            id: item.id || null
+        }));
+
+        moodifyQueueIndex = index;
+
+        let spotifyTrackId =
+            moodifyQueue[index]?.id || null;
+
+        if (!spotifyTrackId) {
+            const formData = new FormData();
+
+            formData.append(
+                "song_name",
+                song.name
+            );
+
+            formData.append(
+                "artist_name",
+                song.artist
+            );
+
+            const response =
+                await fetch("/spotify_track", {
+                    method: "POST",
+                    body: formData
+                });
+
+            if (!response.ok) {
+                throw new Error(
+                    `Spotify lookup failed: ${response.status}`
+                );
+            }
+
+            const data =
+                await response.json();
+
+            if (!data.spotify_id) {
+                throw new Error(
+                    "Spotify track not found"
+                );
+            }
+
+            spotifyTrackId =
+                data.spotify_id;
+
+            moodifyQueue[index].id =
+                spotifyTrackId;
+
+            // Keep the full list in sync so another click is instant.
+            if (allMoodSongs[index]) {
+                allMoodSongs[index].id =
+                    spotifyTrackId;
+            }
+        }
+
+        await playMoodifySpotifyTrack(
+            spotifyTrackId,
+            song.name,
+            song.artist
+        );
+
+        // Highlight the selected song in the full list.
+        buttons.forEach(button => {
+            button.classList.remove("ring-2", "ring-primary");
+            button.textContent = "▶ Play";
+        });
+
+        const selectedButton =
+            document.querySelector(
+                `.all-song-play[data-all-index="${index}"]`
+            );
+
+        if (selectedButton) {
+            selectedButton.classList.add(
+                "ring-2",
+                "ring-primary"
+            );
+            selectedButton.textContent =
+                "✓ Playing";
+        }
+
+        // Close the modal after a successful selection.
+        setSongsModal(false);
+
+    } catch (error) {
+        console.error(
+            "Full-list Spotify playback failed:",
+            error
+        );
+
+        if (primaryArtist) {
+            primaryArtist.textContent =
+                error.message ||
+                "Spotify playback failed";
+        }
+
+        const selectedButton =
+            document.querySelector(
+                `.all-song-play[data-all-index="${index}"]`
+            );
+
+        if (selectedButton) {
+            selectedButton.textContent =
+                "Try Again";
+        }
+    } finally {
+        buttons.forEach(button => {
+            button.disabled = false;
+        });
+    }
+}
+
+
+function wireSeeAllButton() {
+    const seeAllButton =
+        document.getElementById("seeAllButton");
+
+    const closeSongsModal =
+        document.getElementById("closeSongsModal");
+
+    const allSongsModal =
+        document.getElementById("allSongsModal");
+
+    if (seeAllButton) {
+        seeAllButton.addEventListener(
+            "click",
+            openAllSongs
+        );
+    }
+
+    if (closeSongsModal) {
+        closeSongsModal.addEventListener(
+            "click",
+            () => setSongsModal(false)
+        );
+    }
+
+    if (allSongsModal) {
+        allSongsModal.addEventListener(
+            "click",
+            event => {
+                if (event.target === allSongsModal) {
+                    setSongsModal(false);
+                }
+            }
+        );
+    }
+
+    document.addEventListener(
+        "keydown",
+        event => {
+            if (
+                event.key === "Escape" &&
+                allSongsModal &&
+                !allSongsModal.classList.contains("hidden")
+            ) {
+                setSongsModal(false);
+            }
+        }
+    );
+}
+
+
+wireSeeAllButton();
+
+
 // =====================================================
 // RESET
 // =====================================================
 
 function resetMood() {
+
+    if (rotationTimer) {
+        clearInterval(rotationTimer);
+        rotationTimer = null;
+    }
+
+    allMoodSongs = [];
+    currentMoodSongs = [];
+    currentRotationIndex = 0;
+    lastRecommendationMood = "";
 
     if (moodEmoji)
         moodEmoji.textContent = "😐";
@@ -1404,6 +1857,11 @@ let spotifyPosition = 0;
 let spotifyDuration = 0;
 let moodifyQueue = [];
 let moodifyQueueIndex = -1;
+let allMoodSongs = [];
+let rotationTimer = null;
+let currentMoodSongs = [];
+let currentRotationIndex = 0;
+let lastRecommendationMood = "";
 let moodifyPlaybackRequest = 0;
 let moodifyRequestedTrackId = null;
 let moodifyProgressTimer = null;

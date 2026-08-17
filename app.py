@@ -238,6 +238,66 @@ def get_music_recommendations(mood):
 
     songs = Music_Player[
         Music_Player["mood"] == mood
+    ].copy()
+
+    # Keep all songs for this mood
+    songs = songs.sample(
+        frac=1,
+        random_state=None
+    ).reset_index(drop=True)
+
+    recommendations_df = songs[
+        [
+            "album",
+            "artist",
+            "name",
+            "popularity",
+            "release_date"
+        ]
+    ].astype(object)
+
+    recommendations_df = recommendations_df.where(
+        pd.notna(recommendations_df),
+        None
+    )
+
+    return recommendations_df.to_dict(
+        orient="records"
+    )
+
+    songs = Music_Player[
+        Music_Player["mood"] == mood
+    ]
+
+    songs = songs.sort_values(
+        by="popularity",
+        ascending=False
+    ).head(5)
+
+    recommendations_df = songs[
+        [
+            "album",
+            "artist",
+            "name",
+            "popularity",
+            "release_date"
+        ]
+    ].astype(object)
+
+    # Convert NaN to None so Flask sends valid JSON
+    recommendations_df = recommendations_df.where(
+        pd.notna(recommendations_df),
+        None
+    )
+
+    recommendations = recommendations_df.to_dict(
+        orient="records"
+    )
+
+    return recommendations
+
+    songs = Music_Player[
+        Music_Player["mood"] == mood
     ]
 
     songs = songs.sort_values(
